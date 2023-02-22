@@ -151,7 +151,8 @@ def get_latest_version():
 
 
 def get_version_manifest(target_version, quiet):
-    if Path(f"versions/{target_version}/version.json").exists() and Path(f"versions/{target_version}/version.json").is_file():
+    if Path(f"versions/{target_version}/version.json").exists() and Path(
+        f"versions/{target_version}/version.json").is_file():
         if not quiet:
             print(
                 "Version manifest already existing, not downloading again, if you want to please accept safe removal at beginning")
@@ -183,7 +184,8 @@ def sha256(fname: Union[Union[str, bytes], int]):
 
 def get_version_jar(target_version, side, quiet):
     path_to_json = Path(f"versions/{target_version}/version.json")
-    if Path(f"versions/{target_version}/{side}.jar").exists() and Path(f"versions/{target_version}/{side}.jar").is_file():
+    if Path(f"versions/{target_version}/{side}.jar").exists() and Path(
+        f"versions/{target_version}/{side}.jar").is_file():
         if not quiet:
             print(f"versions/{target_version}/{side}.jar already existing, not downloading again")
         return
@@ -207,13 +209,15 @@ def get_version_jar(target_version, side, quiet):
                             if content is not None:
                                 element = content.split(b"\t")
                                 if len(element) != 3:
-                                    print(f"Jar should be extracted but version list is not in the correct format, expected 3 fields, got {len(element)} for {content}")
+                                    print(
+                                        f"Jar should be extracted but version list is not in the correct format, expected 3 fields, got {len(element)} for {content}")
                                     sys.exit(-1)
                                 version_hash = element[0].decode()
                                 version = element[1].decode()
                                 path = element[2].decode()
                                 if version != target_version and not quiet:
-                                    print(f"Warning, version is not identical to the one targeted got {version} exepected {target_version}")
+                                    print(
+                                        f"Warning, version is not identical to the one targeted got {version} exepected {target_version}")
                                 new_jar_path = f"versions/{target_version}"
                                 try:
                                     new_jar_path = z.extract(f"META-INF/versions/{path}", new_jar_path)
@@ -223,7 +227,8 @@ def get_version_jar(target_version, side, quiet):
                                 if Path(new_jar_path).exists():
                                     file_hash = sha256(new_jar_path)
                                     if file_hash != version_hash:
-                                        print(f"Extracted file hash and expected hash did not match up, got {file_hash} expected {version_hash}")
+                                        print(
+                                            f"Extracted file hash and expected hash did not match up, got {file_hash} expected {version_hash}")
                                         sys.exit(-1)
                                     try:
                                         shutil.move(new_jar_path, jar_path)
@@ -232,7 +237,8 @@ def get_version_jar(target_version, side, quiet):
                                         print("Exception while removing the temp file", e)
                                         sys.exit(-1)
                                 else:
-                                    print(f"New {side} jar could not be extracted from archive at {new_jar_path}, failure")
+                                    print(
+                                        f"New {side} jar could not be extracted from archive at {new_jar_path}, failure")
                                     sys.exit(-1)
                     else:
                         print(f"Jar was maybe downloaded but not located, this is a failure, check path at {jar_path}")
@@ -305,7 +311,7 @@ def remap(version, side, quiet):
                 sys.exit(-1)
             path = path_temp
     mapp = Path(f'mappings/{version}/{side}.tsrg')
-    specialsource = Path('./lib/SpecialSource-1.9.1.jar')
+    specialsource = Path('./lib/SpecialSource-1.11.1-SNAPSHOT.jar')
     if path.exists() and mapp.exists() and specialsource.exists() and path.is_file() and mapp.is_file() and specialsource.is_file():
         path = path.resolve()
         mapp = mapp.resolve()
@@ -324,7 +330,7 @@ def remap(version, side, quiet):
     else:
         if not quiet:
             print(
-                f'ERROR: Missing files: ./lib/SpecialSource-1.8.6.jar or mappings/{version}/{side}.tsrg or versions/{version}/{side}.jar')
+                f'ERROR: Missing files: ./lib/SpecialSource-1.11.1-SNAPSHOT.jar or mappings/{version}/{side}.tsrg or versions/{version}/{side}.jar')
             input("Aborting, press anything to exit")
         sys.exit(-1)
 
@@ -375,6 +381,52 @@ def decompile_fern_flower(decompiled_version, version, side, quiet, force):
         sys.exit(-1)
 
 
+def decompile_quilt_flower(decompiled_version, version, side, quiet, force):
+    if not quiet:
+        print('=== Decompiling using QuiltFlower (silent) ===')
+    t = time.time()
+    path = Path(f'./src/{version}-{side}-temp.jar')
+    quiltflower = Path('./lib/quiltflower.jar')
+    if path.exists() and quiltflower.exists():
+        path = path.resolve()
+        quiltflower = quiltflower.resolve()
+        subprocess.run(['java',
+                        '-Xmx4G',
+                        '-Xms1G',
+                        '-jar', quiltflower.__str__(),
+                        '-hes=0',  # hide empty super invocation deactivated (might clutter but allow following)
+                        '-hdc=0',  # hide empty default constructor deactivated (allow to track)
+                        '-dgs=1',  # decompile generic signatures activated (make sure we can follow types)
+                        '-lit=1',  # output numeric literals
+                        '-asc=1',  # encode non-ASCII characters in string and character
+                        '-log=WARN',
+                        path.__str__(), f'./src/{decompiled_version}/{side}'
+                        ], check=True, capture_output=quiet)
+        if not quiet:
+            print(f'- Removing -> {version}-{side}-temp.jar')
+        os.remove(f'./src/{version}-{side}-temp.jar')
+        if not quiet:
+            print("Decompressing remapped jar to directory")
+        with zipfile.ZipFile(f'./src/{decompiled_version}/{side}/{version}-{side}-temp.jar') as z:
+            z.extractall(path=f'./src/{decompiled_version}/{side}')
+        t = time.time() - t
+        if not quiet:
+            print(f'Done in %.1fs (file was decompressed in {decompiled_version}/{side})' % t)
+            print('Remove Extra Jar file? (y/n): ')
+            response = input() or "y"
+            if response == 'y':
+                print(f'- Removing -> {decompiled_version}/{side}/{version}-{side}-temp.jar')
+                os.remove(f'./src/{decompiled_version}/{side}/{version}-{side}-temp.jar')
+        if force:
+            os.remove(f'./src/{decompiled_version}/{side}/{version}-{side}-temp.jar')
+
+    else:
+        if not quiet:
+            print(f'ERROR: Missing files: ./lib/quiltflower.jar or ./src/{version}-{side}-temp.jar')
+            input("Aborting, press anything to exit")
+        sys.exit(-1)
+
+
 def decompile_cfr(decompiled_version, version, side, quiet):
     if not quiet:
         print('=== Decompiling using CFR (silent) ===')
@@ -406,6 +458,15 @@ def decompile_cfr(decompiled_version, version, side, quiet):
             print(f'ERROR: Missing files: ./lib/cfr-0.146.jar or ./src/{version}-{side}-temp.jar')
             input("Aborting, press anything to exit")
         sys.exit(-1)
+
+
+def decompile(args, decompiled_version, decompiler, side, version):
+    if decompiler.lower() == "cfr":
+        decompile_cfr(decompiled_version, version, side, args.quiet)
+    elif decompiler.lower() == "quiltflower":
+        decompile_quilt_flower(decompiled_version, version, side, args.quiet, args.force)
+    else:
+        decompile_fern_flower(decompiled_version, version, side, args.quiet, args.force)
 
 
 def remove_brackets(line, counter):
@@ -593,7 +654,7 @@ def main():
     parser.add_argument('--forceno', '-fn', dest='forceno', action='store_false', default=True,
                         help=f"Force resolving conflict by creating new directories.")
     parser.add_argument('--decompiler', '-d', type=str, dest='decompiler', default="cfr",
-                        help=f"Choose between fernflower and cfr.")
+                        help=f"Choose between fernflower, quiltflower and cfr.")
     parser.add_argument('--nauto', '-na', dest='nauto', action='store_true', default=False,
                         help=f"Choose between auto and manual mode.")
     parser.add_argument('--download_mapping', '-dm', nargs='?', const=True, type=str2bool, dest='download_mapping',
@@ -630,8 +691,8 @@ def main():
     if use_flags:
         decompiler = args.decompiler
     else:
-        decompiler = input("Please input you decompiler choice: fernflower or cfr (CFR/f): ")
-    decompiler = decompiler.lower() if decompiler.lower() in ["fernflower", "cfr", "f"] else "cfr"
+        decompiler = input("Please input you decompiler choice: fernflower, quiltflower or cfr (CFR/q/f): ")
+    decompiler = decompiler.lower() if decompiler.lower() in ["fernflower", "cfr", "f", "quiltflower", "q"] else "cfr"
     if use_flags:
         version = args.mcversion
         if version is None:
@@ -664,10 +725,7 @@ def main():
         convert_mappings(version, side, args.quiet)
         get_version_jar(version, side, args.quiet)
         remap(version, side, args.quiet)
-        if decompiler.lower() == "cfr":
-            decompile_cfr(decompiled_version, version, side, args.quiet)
-        else:
-            decompile_fern_flower(decompiled_version, version, side, args.quiet, args.force)
+        decompile(args, decompiled_version, decompiler, side, version)
         if not args.quiet:
             print("===FINISHED===")
             print(f"output is in /src/{version}")
@@ -720,10 +778,7 @@ def main():
         r = input('Decompile? (y/n): ') or "y"
         r = r.lower() == "y"
     if r:
-        if decompiler.lower() == "cfr":
-            decompile_cfr(decompiled_version, version, side, args.quiet)
-        else:
-            decompile_fern_flower(decompiled_version, version, side, args.quiet, args.force)
+        decompile(args, decompiled_version, decompiler, side, version)
     if not args.quiet:
         print("===FINISHED===")
         print(f"output is in /src/{decompiled_version}")
